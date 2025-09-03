@@ -5,12 +5,14 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const { twiml } = require("twilio");
 const axios = require("axios");
+require("dotenv").config(); // for local .env
 
-// --- Use environment variables ---
+// --- Load from .env or Render Environment ---
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioNumber = process.env.TWILIO_PHONE_NUMBER;
 const groqApiKey = process.env.GROQ_API_KEY;
+const baseUrl = process.env.BASE_URL; // Your Render domain
 
 const client = require("twilio")(accountSid, authToken);
 const app = express();
@@ -88,7 +90,7 @@ app.get("/call", async (req, res) => {
   try {
     const toNumber = req.query.to;
     const call = await client.calls.create({
-      url: `https://${req.headers.host}/voice`, // Auto detect Render domain
+      url: `${baseUrl}/voice`,
       to: toNumber,
       from: twilioNumber,
     });
