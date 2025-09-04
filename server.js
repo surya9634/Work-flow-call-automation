@@ -2,7 +2,7 @@ import express from "express";
 import twilio from "twilio";
 import fs from "fs";
 import dotenv from "dotenv";
-import edgeTTS from "msedge-tts"; // ✅ msedge-tts import
+import edgeTTS from "msedge-tts";
 
 dotenv.config();
 
@@ -15,35 +15,46 @@ const authToken = process.env.TWILIO_AUTH;
 const fromNumber = process.env.TWILIO_NUMBER;
 const client = twilio(accountSid, authToken);
 
-// Endpoint to make call
+// Generate speech and save as MP3
+async function generateSpeech(text, voice = "en-US-JennyNeural") {
+  const filepath = "./speech.mp3";
+
+  const tts = new edgeTTS.TextToSpeech(text, voice);
+  const readable = await tts.toStream();
+
+  const writeStream = fs.createWriteStream(filepath);
+  readable.pipe(writeStream);
+
+  return new Promise((resolve, reject) => {
+    writeStream.on("finish", () => resolve(filepath));
+    writeStream.on("error", reject);
+  });
+}
+
+// API: make call
 app.get("/make-call", async (req, res) => {
   const { to, text, voice } = req.query;
   if (!to || !text) {
-    return res.status(400).send("Missing 'to' or 'text' query params");
+    return res.status(400).send("Missing 'to' or 'text'");
   }
 
   try {
-    const chosenVoice = voice || "en-US-JennyNeural";
+    await generateSpeech(text, voice);
 
-    // ✅ Use edge-tts to synthesize and save to MP3
-    const filePath = "./speech.mp3";
-    await edgeTTS.convertTextToSpeech(text, filePath, chosenVoice);
-
-    // Start Twilio call
     const call = await client.calls.create({
       url: `${process.env.BASE_URL}/voice`,
       to,
       from: fromNumber,
     });
 
-    res.json({ message: "Call started!", callSid: call.sid });
+    res.json({ message: "📞 Call started!", callSid: call.sid });
   } catch (err) {
     console.error("❌ Error making call:", err);
     res.status(500).send("Error making call");
   }
 });
 
-// Twilio webhook to play speech
+// Twilio webhook
 app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
@@ -53,7 +64,7 @@ app.post("/voice", (req, res) => {
   `);
 });
 
-// Serve generated MP3
+// Serve audio
 app.get("/speech.mp3", (req, res) => {
   res.sendFile(process.cwd() + "/speech.mp3");
 });
