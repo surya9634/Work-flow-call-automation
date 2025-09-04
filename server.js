@@ -1,87 +1,56 @@
 import express from "express";
-import fs from "fs";
-import edgeTTS from "edge-tts";
 import twilio from "twilio";
+import fs from "fs";
+import dotenv from "dotenv";
+import { EdgeTTS } from "edge-tts-universal";
+
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
-// ✅ Load ENV variables
-const BASE_URL = process.env.BASE_URL;
-const TWILIO_AUTH = process.env.TWILIO_AUTH;
-const TWILIO_NUMBER = process.env.TWILIO_NUMBER;
-const TWILIO_SID = process.env.TWILIO_SID;
+const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
 
-// ✅ Twilio client
-const client = twilio(TWILIO_SID, TWILIO_AUTH);
-
-// ✅ Function to generate speech using edge-tts
-async function generateSpeech(text, filePath) {
-  try {
-    const stream = await edgeTTS.stream({
-      text,
-      voice: "en-US-AriaNeural", // you can change the voice
-    });
-
-    const writeStream = fs.createWriteStream(filePath);
-    for await (const chunk of stream) {
-      if (chunk.type === "audio") {
-        writeStream.write(chunk.data);
-      }
-    }
-    writeStream.end();
-    return filePath;
-  } catch (err) {
-    console.error("❌ Error generating speech:", err);
-    throw err;
-  }
+// Generates speech using Edge TTS Universal
+async function generateSpeech(text, voice = "en-US-EmmaMultilingualNeural") {
+  const tts = new EdgeTTS(text, voice);
+  const result = await tts.synthesize();
+  const buffer = Buffer.from(await result.audio.arrayBuffer());
+  fs.writeFileSync("./speech.mp3", buffer);
 }
 
-// ✅ Route to make call
+// Trigger call with text-to-speech
 app.get("/make-call", async (req, res) => {
+  const { to, text, voice } = req.query;
+  if (!to || !text) return res.status(400).send("Missing 'to' or 'text'");
+
   try {
-    const { to, text } = req.query;
-
-    if (!to || !text) {
-      return res.status(400).send("Missing 'to' or 'text' parameter");
-    }
-
-    const audioFile = "./speech.mp3";
-    await generateSpeech(text, audioFile);
-
-    // ✅ URL of audio file served from our server
-    const audioUrl = `${BASE_URL}/speech.mp3`;
-
-    // ✅ Make Twilio call
+    await generateSpeech(text, voice);
     const call = await client.calls.create({
-      url: `${BASE_URL}/twiml?audio=${encodeURIComponent(audioUrl)}`,
+      url: `${process.env.BASE_URL}/voice`,
       to,
-      from: TWILIO_NUMBER,
+      from: process.env.TWILIO_NUMBER
     });
-
-    res.json({ success: true, callSid: call.sid });
+    res.json({ message: "Call started", sid: call.sid });
   } catch (err) {
-    console.error("❌ Error making call:", err);
+    console.error(err);
     res.status(500).send("Error making call: " + err.message);
   }
 });
 
-// ✅ Serve audio file
-app.get("/speech.mp3", (req, res) => {
-  res.sendFile("speech.mp3", { root: "." });
-});
-
-// ✅ TwiML for Twilio to play audio
-app.get("/twiml", (req, res) => {
-  const { audio } = req.query;
+// Twilio webhook
+app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
     <Response>
-      <Play>${audio}</Play>
+      <Play>${process.env.BASE_URL}/speech.mp3</Play>
     </Response>
   `);
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+// Serve speech file
+app.get("/speech.mp3", (req, res) => {
+  res.sendFile("speech.mp3", { root: "." });
 });
+
+app.listen(port, () => console.log(`Server running on port ${port}`));
