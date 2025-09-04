@@ -2,7 +2,10 @@ import express from "express";
 import twilio from "twilio";
 import fs from "fs";
 import dotenv from "dotenv";
-import { tts } from "msedge-tts";
+
+// ✅ FIX: Import msedge-tts properly (CommonJS module)
+import pkg from "msedge-tts";
+const { tts } = pkg;
 
 dotenv.config();
 
@@ -26,7 +29,7 @@ app.get("/make-call", async (req, res) => {
     // Generate speech.mp3 using msedge-tts
     const audioBuffer = await tts({
       text,
-      voice: "en-US-JennyNeural" // You can change to other voices
+      voice: "en-US-JennyNeural" // Changeable
     });
     fs.writeFileSync("speech.mp3", audioBuffer);
 
