@@ -3,9 +3,9 @@ import twilio from "twilio";
 import fs from "fs";
 import dotenv from "dotenv";
 
-// ✅ FIX: Import msedge-tts properly (CommonJS module)
+// ✅ Correct import for msedge-tts
 import pkg from "msedge-tts";
-const { tts } = pkg;
+const { TTS } = pkg;
 
 dotenv.config();
 
@@ -18,22 +18,28 @@ const authToken = process.env.TWILIO_AUTH;
 const fromNumber = process.env.TWILIO_NUMBER;
 const client = twilio(accountSid, authToken);
 
-// Start a call with custom text
+// Endpoint to make call
 app.get("/make-call", async (req, res) => {
-  const { to, text } = req.query;
+  const { to, text, voice } = req.query;
   if (!to || !text) {
     return res.status(400).send("Missing 'to' or 'text' query params");
   }
 
   try {
-    // Generate speech.mp3 using msedge-tts
-    const audioBuffer = await tts({
-      text,
-      voice: "en-US-JennyNeural" // Changeable
-    });
-    fs.writeFileSync("speech.mp3", audioBuffer);
+    // ✅ Create TTS engine
+    const tts = new TTS();
+    const chosenVoice = voice || "en-US-JennyNeural"; // Default if not passed
 
-    // Create a Twilio call
+    const audioStream = tts.toStream(text, { voice: chosenVoice });
+    const chunks = [];
+
+    for await (const chunk of audioStream) {
+      chunks.push(chunk);
+    }
+
+    fs.writeFileSync("speech.mp3", Buffer.concat(chunks));
+
+    // Start Twilio call
     const call = await client.calls.create({
       url: `${process.env.BASE_URL}/voice`,
       to,
@@ -42,12 +48,12 @@ app.get("/make-call", async (req, res) => {
 
     res.json({ message: "Call started!", callSid: call.sid });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error making call:", err);
     res.status(500).send("Error making call");
   }
 });
 
-// Twilio webhook: tells Twilio to play our audio
+// Twilio webhook to play speech
 app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
@@ -57,7 +63,7 @@ app.post("/voice", (req, res) => {
   `);
 });
 
-// Serve generated speech.mp3
+// Serve generated MP3
 app.get("/speech.mp3", (req, res) => {
   res.sendFile(process.cwd() + "/speech.mp3");
 });
