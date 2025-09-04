@@ -1,12 +1,15 @@
 import express from "express";
 import twilio from "twilio";
 import fs from "fs";
-import edgeTTS from "edge-tts";
+import dotenv from "dotenv";
+import { tts } from "msedge-tts";
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Twilio credentials from env vars
+// Twilio setup
 const accountSid = process.env.TWILIO_SID;
 const authToken = process.env.TWILIO_AUTH;
 const fromNumber = process.env.TWILIO_NUMBER;
@@ -20,15 +23,14 @@ app.get("/make-call", async (req, res) => {
   }
 
   try {
-    // Generate speech.mp3 from input text
-    const outputFile = "speech.mp3";
-    const tts = await edgeTTS.synthesize(text, {
-      voice: "en-US-JennyNeural",
-      outputFile,
+    // Generate speech.mp3 using msedge-tts
+    const audioBuffer = await tts({
+      text,
+      voice: "en-US-JennyNeural" // You can change to other voices
     });
-    fs.writeFileSync(outputFile, Buffer.from(await tts.toBuffer()));
+    fs.writeFileSync("speech.mp3", audioBuffer);
 
-    // Create call
+    // Create a Twilio call
     const call = await client.calls.create({
       url: `${process.env.BASE_URL}/voice`,
       to,
@@ -42,7 +44,7 @@ app.get("/make-call", async (req, res) => {
   }
 });
 
-// Twilio webhook when call connects
+// Twilio webhook: tells Twilio to play our audio
 app.post("/voice", (req, res) => {
   res.type("text/xml");
   res.send(`
