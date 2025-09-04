@@ -2,10 +2,7 @@ import express from "express";
 import twilio from "twilio";
 import fs from "fs";
 import dotenv from "dotenv";
-
-// ✅ Correct import for msedge-tts
-import pkg from "msedge-tts";
-const { TTS } = pkg;
+import edgeTTS from "msedge-tts"; // ✅ correct import
 
 dotenv.config();
 
@@ -26,18 +23,14 @@ app.get("/make-call", async (req, res) => {
   }
 
   try {
-    // ✅ Create TTS engine
-    const tts = new TTS();
-    const chosenVoice = voice || "en-US-JennyNeural"; // Default if not passed
+    // ✅ Use msedge-tts synthesize
+    const chosenVoice = voice || "en-US-JennyNeural";
 
-    const audioStream = tts.toStream(text, { voice: chosenVoice });
-    const chunks = [];
+    const audio = await edgeTTS.synthesize(text, chosenVoice, {
+      format: "audio-16khz-32kbitrate-mono-mp3",
+    });
 
-    for await (const chunk of audioStream) {
-      chunks.push(chunk);
-    }
-
-    fs.writeFileSync("speech.mp3", Buffer.concat(chunks));
+    fs.writeFileSync("speech.mp3", audio);
 
     // Start Twilio call
     const call = await client.calls.create({
