@@ -1,44 +1,60 @@
 import express from "express";
-import multer from "multer";
+import twilio from "twilio";
 import fs from "fs";
-import { Readable } from "stream";
-import vosk from "vosk";
 import edgeTTS from "edge-tts";
 
 const app = express();
-const upload = multer({ dest: "uploads/" });
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
-app.use(express.static("public"));
+// Twilio credentials from env vars
+const accountSid = process.env.TWILIO_SID;
+const authToken = process.env.TWILIO_AUTH;
+const fromNumber = process.env.TWILIO_NUMBER;
+const client = twilio(accountSid, authToken);
 
-// ---- Setup VOSK (STT) ----
-const MODEL_PATH = "models/vosk-model-small-en-us-0.15";
-if (!fs.existsSync(MODEL_PATH)) {
-  console.error("❌ Vosk model missing! Download from: https://alphacephei.com/vosk/models");
-  process.exit();
-}
-vosk.setLogLevel(0);
-const model = new vosk.Model(MODEL_PATH);
+// Start a call with custom text
+app.get("/make-call", async (req, res) => {
+  const { to, text } = req.query;
+  if (!to || !text) {
+    return res.status(400).send("Missing 'to' or 'text' query params");
+  }
 
-// 🎤 Speech-to-Text route
-app.post("/stt", upload.single("audio"), async (req, res) => {
-  const rec = new vosk.Recognizer({ model: model, sampleRate: 16000 });
-  const data = fs.readFileSync(req.file.path);
-  rec.acceptWaveform(data);
-  const text = rec.finalResult().text;
-  rec.free();
-  fs.unlinkSync(req.file.path); // cleanup
-  res.json({ text });
+  try {
+    // Generate speech.mp3 from input text
+    const outputFile = "speech.mp3";
+    const tts = await edgeTTS.synthesize(text, {
+      voice: "en-US-JennyNeural",
+      outputFile,
+    });
+    fs.writeFileSync(outputFile, Buffer.from(await tts.toBuffer()));
+
+    // Create call
+    const call = await client.calls.create({
+      url: `${process.env.BASE_URL}/voice`,
+      to,
+      from: fromNumber,
+    });
+
+    res.json({ message: "Call started!", callSid: call.sid });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error making call");
+  }
 });
 
-// 🔊 Text-to-Speech route
-app.get("/tts", async (req, res) => {
-  const text = req.query.text || "Hello from Edge TTS!";
-  const stream = await edgeTTS.synthesize(text, { voice: "en-US-JennyNeural" });
-
-  res.setHeader("Content-Type", "audio/mpeg");
-  Readable.from(stream.stream).pipe(res);
+// Twilio webhook when call connects
+app.post("/voice", (req, res) => {
+  res.type("text/xml");
+  res.send(`
+    <Response>
+      <Play>${process.env.BASE_URL}/speech.mp3</Play>
+    </Response>
+  `);
 });
 
-// 🚀 Start Server
-app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+// Serve generated speech.mp3
+app.get("/speech.mp3", (req, res) => {
+  res.sendFile(process.cwd() + "/speech.mp3");
+});
+
+app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
