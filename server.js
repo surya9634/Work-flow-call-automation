@@ -1,56 +1,72 @@
 import express from "express";
 import twilio from "twilio";
-import fs from "fs";
+import gTTS from "google-tts-api";
 import dotenv from "dotenv";
-import { EdgeTTS } from "edge-tts-universal";
 
 dotenv.config();
-
 const app = express();
-const port = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH);
 
-// Generates speech using Edge TTS Universal
-async function generateSpeech(text, voice = "en-US-EmmaMultilingualNeural") {
-  const tts = new EdgeTTS(text, voice);
-  const result = await tts.synthesize();
-  const buffer = Buffer.from(await result.audio.arrayBuffer());
-  fs.writeFileSync("./speech.mp3", buffer);
+// ✅ Big Hindi essay
+const hindiEssay = `
+भारत एक महान देश है। यहाँ की संस्कृति, परंपरा और विविधता दुनिया भर में प्रसिद्ध है। 
+हमारे देश में अनेक भाषाएँ, धर्म और जातियाँ हैं, लेकिन इसके बावजूद यहाँ एकता बनी रहती है। 
+भारत की गंगा-जमुनी तहज़ीब पूरे विश्व के लिए प्रेरणा है। 
+हमारे स्वतंत्रता सेनानियों ने अपने बलिदान से हमें स्वतंत्रता दिलाई। 
+आज का युवा वर्ग शिक्षा, विज्ञान और तकनीकी के क्षेत्र में देश का नाम रोशन कर रहा है। 
+भारतीय संस्कृति में परिवार, गुरु और समाज का विशेष स्थान है। 
+भारत गाँवों का देश है और गाँव हमारी आत्मा हैं। 
+यदि हम सब मिलकर मेहनत करें तो भारत को फिर से 'सोने की चिड़िया' बनाया जा सकता है।
+`;
+
+// Function to generate Google TTS audio URL (Hindi)
+async function generateHindiSpeech(text) {
+  const url = gTTS.getAudioUrl(text, {
+    lang: "hi",
+    slow: false,
+    host: "https://translate.google.com",
+  });
+  return url;
 }
 
-// Trigger call with text-to-speech
+// Route: Make a call with Hindi essay
 app.get("/make-call", async (req, res) => {
-  const { to, text, voice } = req.query;
-  if (!to || !text) return res.status(400).send("Missing 'to' or 'text'");
-
   try {
-    await generateSpeech(text, voice);
+    const to = req.query.to;
+    if (!to) {
+      return res.status(400).send("❌ Missing 'to' phone number");
+    }
+
+    // Generate Hindi TTS audio for essay
+    const audioUrl = await generateHindiSpeech(hindiEssay);
+
+    // Make the Twilio call
     const call = await client.calls.create({
-      url: `${process.env.BASE_URL}/voice`,
+      url: `${process.env.BASE_URL}/twiml?audioUrl=${encodeURIComponent(audioUrl)}`,
       to,
-      from: process.env.TWILIO_NUMBER
+      from: process.env.TWILIO_NUMBER,
     });
-    res.json({ message: "Call started", sid: call.sid });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error making call: " + err.message);
+
+    res.send(`✅ Call started with SID: ${call.sid}`);
+  } catch (error) {
+    console.error("❌ Error making call:", error);
+    res.status(500).send("❌ Error making call: " + error.message);
   }
 });
 
-// Twilio webhook
-app.post("/voice", (req, res) => {
+// TwiML endpoint
+app.get("/twiml", (req, res) => {
+  const audioUrl = req.query.audioUrl;
+  const twiml = new twilio.twiml.VoiceResponse();
+  twiml.play(audioUrl);
+
   res.type("text/xml");
-  res.send(`
-    <Response>
-      <Play>${process.env.BASE_URL}/speech.mp3</Play>
-    </Response>
-  `);
+  res.send(twiml.toString());
 });
 
-// Serve speech file
-app.get("/speech.mp3", (req, res) => {
-  res.sendFile("speech.mp3", { root: "." });
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
-
-app.listen(port, () => console.log(`Server running on port ${port}`));
