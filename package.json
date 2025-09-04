@@ -1,19 +1,5 @@
-{
-  "name": "workflow-call-automation",
-  "version": "1.0.0",
-  "description": "Twilio call automation with Microsoft Edge TTS voice",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "twilio": "^4.20.0",
-    "msedge-tts": "^1.0.2",
-    "dotenv": "^16.3.1"
-  },
-  "engines": {
-    "node": "22.x"
-  }
+"dependencies": {
+  "express": "^4.19.2",
+  "twilio": "^4.23.0",
+  "edge-tts": "^6.1.2"
 }
