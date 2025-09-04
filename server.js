@@ -1,5 +1,4 @@
 import express from "express";
-import fetch from "node-fetch";
 import fs from "fs";
 import edgeTTS from "edge-tts";
 import twilio from "twilio";
@@ -50,7 +49,7 @@ app.get("/make-call", async (req, res) => {
     const audioFile = "./speech.mp3";
     await generateSpeech(text, audioFile);
 
-    // ✅ Upload MP3 file to your server
+    // ✅ URL of audio file served from our server
     const audioUrl = `${BASE_URL}/speech.mp3`;
 
     // ✅ Make Twilio call
